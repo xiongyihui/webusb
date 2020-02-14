@@ -208,6 +208,52 @@ def read_ms_os_10_descriptors(handle):
     dump_hex(desc, r)
 
 
+
+# Read MS OS 2.0 Descriptors
+def read_ms_os_20_descriptors(handle, vendor_code):
+    print("\nReading MS OS 2.0 descriptors\n")
+
+    print("  Reading MS OS 2.0 descriptor set header")
+    request_type = usb.LIBUSB_ENDPOINT_IN | usb.LIBUSB_REQUEST_TYPE_VENDOR | usb.LIBUSB_RECIPIENT_DEVICE
+    request = vendor_code
+    value = 0x0000
+    index = 0x0007
+    length = 10
+    desc = (c_uint8 * length)()
+    # Read the descriptor header
+    r = usb.control_transfer(handle,
+                             request_type,
+                             request,
+                             value,
+                             index,
+                             desc,
+                             length,
+                             1000)
+    if r != length:
+        print("  Not found")
+        return
+
+    dump_hex(desc, r)
+
+    length = cast(pointer(desc), POINTER(c_uint16))[4]
+
+    # Read the full feature descriptor
+    desc = (c_uint8 * length)()
+    r = usb.control_transfer(handle,
+                             request_type,
+                             request,
+                             value,
+                             index,
+                             desc,
+                             length,
+                             1000)
+    if r != length:
+        print("  Not found")
+        return
+
+    dump_hex(desc, r)
+
+
 def print_device_cap(dev_cap):
     if dev_cap[0].bDevCapabilityType == usb.LIBUSB_BT_USB_2_0_EXTENSION:
         usb_2_0_ext = POINTER(usb.usb_2_0_extension_descriptor)()
@@ -305,6 +351,9 @@ def test_device(vid, pid):
             if r > 0:
                 print("   {}: {}".format(key, bytearray(string[:r]).decode()))
 
+        # MS OS 1.0 Descriptors
+        read_ms_os_10_descriptors(handle)
+
         print("\nReading BOS descriptor: ", end="")
         bos_desc = POINTER(usb.bos_descriptor)()
         if usb.get_bos_descriptor(handle, pointer(bos_desc)) == usb.LIBUSB_SUCCESS:
@@ -312,7 +361,7 @@ def test_device(vid, pid):
             caps = cast(pointer(bos_desc[0].dev_capability), POINTER(
                 POINTER(usb.bos_dev_capability_descriptor)))
             for i in range(bos_desc[0].bNumDeviceCaps):
-                print_device_cap(caps[i])
+                # print_device_cap(caps[i])
                 if caps[i][0].bDevCapabilityType == 0x05:
                     desc = cast(caps[i], POINTER(
                         PlatformCapabilityDescriptor))[0]
@@ -320,27 +369,26 @@ def test_device(vid, pid):
                     uuid = uuid_to_string(desc.PlatformCapabilityUUID)
 
                     if uuid == MS_OS_20_PLATFORM_CAPABILITY_UUID:
-                        uuid_name = "MS OS 2.0 Platform Capability UUID"
+                        print("  MS OS 2.0 Platform Capability Descriptor")
+                        print("    UUID: {}".format(uuid))
                         desc = cast(caps[i], POINTER(
                             MSOS20PlatformCapabilityDescriptor))[0]
-                        info = "VendorCode: 0x{:02X}".format(desc.bVendorCode)
+                        print("    VendorCode: 0x{:02X}".format(desc.bVendorCode))
+                        read_ms_os_20_descriptors(handle, desc.bVendorCode)
                     elif uuid == WEBUSB_PLATFORM_CAPABILITY_UUID:
-                        uuid_name = "WebUSB Platform Capability UUID"
+                        print("  WebUSB Platform Capability UUID")
+                        print("    UUID: {}".format(uuid))
                         desc = cast(caps[i], POINTER(
                             WebUSBPlatformCapabilityDescriptor))[0]
-                        info = "VendorCode: 0x{:02X}".format(desc.bVendorCode)
+                        print("    VendorCode: 0x{:02X}".format(desc.bVendorCode))
                     else:
-                        uuid_name = "UUID"
-                        info = ""
+                        print("    UUID: {}".format(uuid))
 
-                    print("        {}: {}".format(uuid_name, uuid))
-                    print("        {}".format(info))
 
             usb.free_bos_descriptor(bos_desc)
         else:
             print("no descriptor")
 
-        read_ms_os_10_descriptors(handle)
     finally:
         usb.close(handle)
 
